@@ -11,46 +11,46 @@
 #include <glad/gl.h>
 #define GLFW_INCLUDE_NONE
 #include<GLFW/glfw3.h>
+#include<linmath.h>
 
-
-struct Vec3 {
-    float x, y, z;
-    Vec3() : x(0), y(0), z(0) {}
-    Vec3(float x, float y, float z) : x(x), y(y), z(z) {}
+// Wrapper for vec3 to work with std::vector
+struct Vec3Wrapper {
+    vec3 data;
     
-    Vec3 operator+(const Vec3& other) const { return Vec3(x + other.x, y + other.y, z + other.z); }
-    Vec3 operator-(const Vec3& other) const { return Vec3(x - other.x, y - other.y, z - other.z); }
-    Vec3 operator*(float scalar) const { return Vec3(x * scalar, y * scalar, z * scalar); }
-    Vec3 operator/(float scalar) const { return Vec3(x / scalar, y / scalar, z / scalar); }
+    Vec3Wrapper() { data[0] = data[1] = data[2] = 0.0f; }
+    Vec3Wrapper(float x, float y, float z) { data[0] = x; data[1] = y; data[2] = z; }
+    Vec3Wrapper(const vec3& v) { vec3_dup(data, v); }
     
-    float length() const { return std::sqrt(x*x + y*y + z*z); }
-    Vec3 normalize() const { float len = length(); return len > 0 ? *this / len : Vec3(); }
+    operator vec3&() { return data; }
+    operator const vec3&() const { return data; }
     
-    static Vec3 cross(const Vec3& a, const Vec3& b) {
-        return Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
-    }
+    float& operator[](int i) { return data[i]; }
+    const float& operator[](int i) const { return data[i]; }
 };
+
+
 
 // Mesh structure
 struct Mesh {
-    std::vector<Vec3> vertices;
-    std::vector<Vec3> normals;
+    std::vector<Vec3Wrapper> vertices;
+    std::vector<Vec3Wrapper> normals;
     std::vector<unsigned int> indices;
     
     // Bounding box
-    Vec3 minBounds, maxBounds;
+    Vec3Wrapper minBounds, maxBounds;
     
     void calculateBounds() {
         if (vertices.empty()) return;
         
         minBounds = maxBounds = vertices[0];
+        
         for (const auto& vertex : vertices) {
-            minBounds.x = std::min(minBounds.x, vertex.x);
-            minBounds.y = std::min(minBounds.y, vertex.y);
-            minBounds.z = std::min(minBounds.z, vertex.z);
-            maxBounds.x = std::max(maxBounds.x, vertex.x);
-            maxBounds.y = std::max(maxBounds.y, vertex.y);
-            maxBounds.z = std::max(maxBounds.z, vertex.z);
+            minBounds[0] = std::min(minBounds[0], vertex[0]);
+            minBounds[1] = std::min(minBounds[1], vertex[1]);
+            minBounds[2] = std::min(minBounds[2], vertex[2]);
+            maxBounds[0] = std::max(maxBounds[0], vertex[0]);
+            maxBounds[1] = std::max(maxBounds[1], vertex[1]);
+            maxBounds[2] = std::max(maxBounds[2], vertex[2]);
         }
     }
     
@@ -58,16 +58,21 @@ struct Mesh {
         calculateBounds();
         
         // Find center and size
-        Vec3 center = (minBounds + maxBounds) * 0.5f;
-        Vec3 size = maxBounds - minBounds;
-        float maxDimension = std::max({size.x, size.y, size.z});
+        vec3 center, size;
+        vec3_add(center, minBounds.data, maxBounds.data);
+        vec3_scale(center, center, 0.5f);
+        vec3_sub(size, maxBounds.data, minBounds.data);
+        
+        float maxDimension = std::max({size[0], size[1], size[2]});
         
         if (maxDimension > 0) {
             float scale = 1.0f / maxDimension;
             
             // Normalize all vertices
             for (auto& vertex : vertices) {
-                vertex = (vertex - center) * scale;
+                vec3 temp;
+                vec3_sub(temp, vertex.data, center);
+                vec3_scale(vertex.data, temp, scale);
             }
             
             // Recalculate bounds
@@ -136,72 +141,3 @@ private:
     }
 };
 
-// Matrix utilities (simplified 4x4 matrix)
-struct Mat4 {
-    float data[16];
-    
-    Mat4() {
-        // Identity matrix
-        for (int i = 0; i < 16; i++) data[i] = 0.0f;
-        data[0] = data[5] = data[10] = data[15] = 1.0f;
-    }
-    
-    static Mat4 perspective(float fovy, float aspect, float near, float far) {
-        Mat4 result;
-        for (int i = 0; i < 16; i++) result.data[i] = 0.0f;
-        float tanHalfFovy = tan(fovy / 2.0f);
-        
-        result.data[0] = 1.0f / (aspect * tanHalfFovy);
-        result.data[5] = 1.0f / tanHalfFovy;
-        result.data[10] = -(far + near) / (far - near);
-        result.data[11] = -1.0f;
-        result.data[14] = -(2.0f * far * near) / (far - near);
-        result.data[15] = 0.0f;
-        
-        return result;
-    }
-    
-    static Mat4 lookAt(Vec3 eye, Vec3 center, Vec3 up) {
-        Vec3 f = (center - eye).normalize();
-        Vec3 s = Vec3::cross(f, up).normalize();
-        Vec3 u = Vec3::cross(s, f);
-        
-        Mat4 result;
-        for (int i = 0; i < 16; i++) result.data[i] = 0.0f;
-        result.data[0] = s.x; result.data[4] = s.y; result.data[8] = s.z;
-        result.data[1] = u.x; result.data[5] = u.y; result.data[9] = u.z;
-        result.data[2] = -f.x; result.data[6] = -f.y; result.data[10] = -f.z;
-        result.data[12] = -(s.x * eye.x + s.y * eye.y + s.z * eye.z);
-        result.data[13] = -(u.x * eye.x + u.y * eye.y + u.z * eye.z);
-        result.data[14] = -(-f.x * eye.x - f.y * eye.y - f.z * eye.z);
-        result.data[15] = 1.0f;
-        
-        return result;
-    }
-    
-    static Mat4 rotateY(float angle) {
-        Mat4 result;
-        float c = cos(angle);
-        float s = sin(angle);
-        
-        result.data[0] = c;
-        result.data[2] = s;
-        result.data[8] = -s;
-        result.data[10] = c;
-        
-        return result;
-    }
-    
-    Mat4 operator*(const Mat4& other) const {
-        Mat4 result;
-        for (int i = 0; i < 16; i++) result.data[i] = 0.0f;
-        for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
-                for (int k = 0; k < 4; k++) {
-                    result.data[i * 4 + j] += data[i * 4 + k] * other.data[k * 4 + j];
-                }
-            }
-        }
-        return result;
-    }
-};

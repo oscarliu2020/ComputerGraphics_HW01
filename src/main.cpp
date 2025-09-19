@@ -8,8 +8,8 @@ bool loadOBJ(const std::string& filename, Mesh& mesh) {
         return false;
     }
     
-    std::vector<Vec3> temp_vertices;
-    std::vector<Vec3> temp_normals;
+    std::vector<Vec3Wrapper> temp_vertices;
+    std::vector<Vec3Wrapper> temp_normals;
     std::string line;
     
     while (std::getline(file, line)) {
@@ -19,14 +19,14 @@ bool loadOBJ(const std::string& filename, Mesh& mesh) {
         
         if (prefix == "v") {
             // Vertex position
-            Vec3 vertex;
-            iss >> vertex.x >> vertex.y >> vertex.z;
+            Vec3Wrapper vertex;
+            iss >> vertex[0] >> vertex[1] >> vertex[2];
             temp_vertices.push_back(vertex);
         }
         else if (prefix == "vn") {
             // Vertex normal
-            Vec3 normal;
-            iss >> normal.x >> normal.y >> normal.z;
+            Vec3Wrapper normal;
+            iss >> normal[0] >> normal[1] >> normal[2];
             temp_normals.push_back(normal);
         }
         else if (prefix == "f") {
@@ -52,15 +52,15 @@ bool loadOBJ(const std::string& filename, Mesh& mesh) {
                         if (normalIndex < temp_normals.size()) {
                             mesh.normals.push_back(temp_normals[normalIndex]);
                         } else {
-                            mesh.normals.push_back(Vec3(0, 1, 0)); // Default normal
+                            mesh.normals.push_back(Vec3Wrapper(0.0f, 1.0f, 0.0f));
                         }
                     } else {
                         mesh.vertices.push_back(temp_vertices[vertexIndex]);
-                        mesh.normals.push_back(Vec3(0, 1, 0)); // Default normal
+                        mesh.normals.push_back(Vec3Wrapper(0.0f, 1.0f, 0.0f));
                     }
                 } else {
                     mesh.vertices.push_back(temp_vertices[vertexIndex]);
-                    mesh.normals.push_back(Vec3(0, 1, 0)); // Default normal
+                    mesh.normals.push_back(Vec3Wrapper(0.0f, 1.0f, 0.0f));
                 }
                 
                 mesh.indices.push_back(mesh.vertices.size() - 1);
@@ -75,26 +75,41 @@ bool loadOBJ(const std::string& filename, Mesh& mesh) {
     // If no normals were provided, calculate them
     if (temp_normals.empty() && !mesh.vertices.empty()) {
         mesh.normals.clear();
-        mesh.normals.resize(mesh.vertices.size(), Vec3(0, 0, 0));
+        mesh.normals.resize(mesh.vertices.size());
+        
+        // Initialize all normals to zero
+        for (auto& normal : mesh.normals) {
+            normal[0] = normal[1] = normal[2] = 0.0f;
+        }
         
         // Calculate face normals and accumulate to vertices
         for (size_t i = 0; i < mesh.indices.size(); i += 3) {
             if (i + 2 < mesh.indices.size()) {
-                Vec3 v1 = mesh.vertices[mesh.indices[i]];
-                Vec3 v2 = mesh.vertices[mesh.indices[i + 1]];
-                Vec3 v3 = mesh.vertices[mesh.indices[i + 2]];
+                vec3 v1, v2, v3;
+                vec3_dup(v1, mesh.vertices[mesh.indices[i]].data);
+                vec3_dup(v2, mesh.vertices[mesh.indices[i + 1]].data);
+                vec3_dup(v3, mesh.vertices[mesh.indices[i + 2]].data);
                 
-                Vec3 normal = Vec3::cross(v2 - v1, v3 - v1).normalize();
+                // Calculate edge vectors
+                vec3 edge1, edge2;
+                vec3_sub(edge1, v2, v1);
+                vec3_sub(edge2, v3, v1);
                 
-                mesh.normals[mesh.indices[i]] = mesh.normals[mesh.indices[i]] + normal;
-                mesh.normals[mesh.indices[i + 1]] = mesh.normals[mesh.indices[i + 1]] + normal;
-                mesh.normals[mesh.indices[i + 2]] = mesh.normals[mesh.indices[i + 2]] + normal;
+                // Calculate face normal using cross product
+                vec3 faceNormal;
+                vec3_mul_cross(faceNormal, edge1, edge2);
+                vec3_norm(faceNormal, faceNormal);
+                
+                // Accumulate to vertex normals
+                vec3_add(mesh.normals[mesh.indices[i]].data, mesh.normals[mesh.indices[i]].data, faceNormal);
+                vec3_add(mesh.normals[mesh.indices[i + 1]].data, mesh.normals[mesh.indices[i + 1]].data, faceNormal);
+                vec3_add(mesh.normals[mesh.indices[i + 2]].data, mesh.normals[mesh.indices[i + 2]].data, faceNormal);
             }
         }
         
         // Normalize accumulated normals
         for (auto& normal : mesh.normals) {
-            normal = normal.normalize();
+            vec3_norm(normal.data, normal.data);
         }
     }
     
@@ -235,8 +250,8 @@ int main() {
     
     // Normalize mesh
     mesh.normalize();
-    std::cout << "Mesh normalized. Bounds: (" << mesh.minBounds.x << ", " << mesh.minBounds.y << ", " << mesh.minBounds.z << ") to ("
-              << mesh.maxBounds.x << ", " << mesh.maxBounds.y << ", " << mesh.maxBounds.z << ")" << std::endl;
+    std::cout << "Mesh normalized. Bounds: (" << mesh.minBounds[0] << ", " << mesh.minBounds[1] << ", " << mesh.minBounds[2] << ") to ("
+              << mesh.maxBounds[0] << ", " << mesh.maxBounds[1] << ", " << mesh.maxBounds[2] << ")" << std::endl;
     
     // Create shader
     Shader shader(vertexShaderSource, fragmentShaderSource);
@@ -252,14 +267,14 @@ int main() {
     
     // Vertex positions
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof(Vec3), mesh.vertices.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vec3), (void*)0);
+    glBufferData(GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof(Vec3Wrapper), mesh.vertices.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vec3Wrapper), (void*)0);
     glEnableVertexAttribArray(0);
     
     // Vertex normals
     glBindBuffer(GL_ARRAY_BUFFER, NBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh.normals.size() * sizeof(Vec3), mesh.normals.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vec3), (void*)0);
+    glBufferData(GL_ARRAY_BUFFER, mesh.normals.size() * sizeof(Vec3Wrapper), mesh.normals.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vec3Wrapper), (void*)0);
     glEnableVertexAttribArray(1);
     
     // Indices
@@ -282,23 +297,31 @@ int main() {
         shader.use();
         
         // Set up matrices
-        Mat4 model = Mat4::rotateY(glfwGetTime() * 0.5f); // Slow rotation
+        mat4x4 model, view, projection;
         
-        Vec3 cameraPos(cameraRadius * cos(cameraAngle), cameraHeight, cameraRadius * sin(cameraAngle));
-        Mat4 view = Mat4::lookAt(cameraPos, Vec3(0, 0, 0), Vec3(0, 1, 0));
+        // Create rotation matrix
+        mat4x4_identity(model);
+        mat4x4_rotate_Y(model, model, glfwGetTime() * 0.5f);
         
-        Mat4 projection = Mat4::perspective(45.0f * 3.14159f / 180.0f, 800.0f / 600.0f, 0.1f, 100.0f);
+        // Set up camera
+        vec3 cameraPos = {cameraRadius * cos(cameraAngle), cameraHeight, cameraRadius * sin(cameraAngle)};
+        vec3 center = {0.0f, 0.0f, 0.0f};
+        vec3 up = {0.0f, 1.0f, 0.0f};
+        mat4x4_look_at(view, cameraPos, center, up);
+        
+        // Set up projection
+        mat4x4_perspective(projection, 45.0f * 3.14159f / 180.0f, 800.0f / 600.0f, 0.1f, 100.0f);
         
         // Set uniforms
-        shader.setMat4("model", model.data);
-        shader.setMat4("view", view.data);
-        shader.setMat4("projection", projection.data);
+        shader.setMat4("model", (float*)model);
+        shader.setMat4("view", (float*)view);
+        shader.setMat4("projection", (float*)projection);
         
         // Lighting uniforms
         shader.setVec3("lightPos", 2.0f, 2.0f, 2.0f);
         shader.setVec3("lightColor", 1.0f, 1.0f, 1.0f);
         shader.setVec3("objectColor", 0.8f, 0.6f, 0.4f);
-        shader.setVec3("viewPos", cameraPos.x, cameraPos.y, cameraPos.z);
+        shader.setVec3("viewPos", cameraPos[0], cameraPos[1], cameraPos[2]);
         
         // Draw mesh
         glBindVertexArray(VAO);
