@@ -3,12 +3,17 @@
 const char* vertex_shader=R"(
 #version 400 core
 layout(location=0) in vec2 aPos;
-layout(location=1) in vec3 aColor;
+layout(location=1) in int ci;
 out vec3 outColor;
+const vec3[3] colors=vec3[](
+    vec3(1.0,0.0,0.0),
+    vec3(0.0,1.0,0.0),
+    vec3(0.0,0.0,1.0)
+);
 void main()
 {
     gl_Position=vec4(aPos,0,1.0);
-    outColor=aColor;
+    outColor=colors[ci];
 }
 )";
 const char* fragment_shader=R"(
