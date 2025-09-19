@@ -5,10 +5,11 @@ const char* vertex_shader=R"(
 layout(location=0) in vec2 aPos;
 layout(location=1) in int ci;
 out vec3 outColor;
-const vec3[3] colors=vec3[](
+const vec3[4] colors=vec3[](
     vec3(1.0,0.0,0.0),
     vec3(0.0,1.0,0.0),
-    vec3(0.0,0.0,1.0)
+    vec3(0.0,0.0,1.0),
+    vec3(0.5,0.5,0)
 );
 void main()
 {
