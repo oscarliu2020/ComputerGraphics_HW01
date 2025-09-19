@@ -208,7 +208,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
     cameraRadius = std::max(1.0f, std::min(10.0f, cameraRadius));
 }
 
-int main() {
+int main(int argc, char** argv) {
     // Initialize GLFW
     if (!glfwInit()) {
         std::cout << "Failed to initialize GLFW" << std::endl;
@@ -243,8 +243,25 @@ int main() {
     
     // Load mesh
     Mesh mesh;
-    if (!loadOBJ("Dino.obj", mesh)) {
-        std::cout << "Failed to load mesh!" << std::endl;
+    std::string filename = "Dino.obj";
+    if (argc > 1) {
+        std::string arg1 = argv[1];
+        if (arg1 == "--help" || arg1 == "-h") {
+            std::cout << "Usage: hw1.exe [path_to_obj]\n";
+            std::cout << "If no path is provided, the program will try to load Dino.obj from the current directory." << std::endl;
+            return 0;
+        }
+        filename = arg1;
+    } else {
+        // Prompt the user for a filename (non-blocking prompt before creating window)
+        std::cout << "Enter OBJ filename to load (or press Enter to use Dino.obj): ";
+        std::string input;
+        std::getline(std::cin, input);
+        if (!input.empty()) filename = input;
+    }
+
+    if (!loadOBJ(filename, mesh)) {
+        std::cout << "Failed to load mesh: " << filename << std::endl;
         return -1;
     }
     
